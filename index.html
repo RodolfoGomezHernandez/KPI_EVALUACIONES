@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard KPI - Aurora Australis</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PapaParse para CSV -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <!-- SheetJS para Excel (.xlsx) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Chart.js para gráficos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chart.js DataLabels Plugin -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    <!-- Iconos -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .card-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+        .selected-item { border-left: 4px solid #3b82f6; background-color: #eff6ff; }
+        /* Scrollbar personalizada */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden text-gray-800">
+
+    <!-- Navbar -->
+    <header class="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-6 z-10 shrink-0">
+        <div class="flex items-center gap-3">
+            <div class="bg-blue-600 text-white p-2 rounded-lg">
+                <i class="fas fa-chart-line"></i>
+            </div>
+            <h1 class="text-xl font-bold text-gray-800">KPI Dashboard <span class="text-blue-600 font-light">Aurora Australis</span></h1>
+        </div>
+        <div class="text-sm text-gray-500 hidden md:block">Evaluación de Desempeño</div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex overflow-hidden relative">
+        
+        <!-- Upload Overlay (Initial State) -->
+        <div id="upload-overlay" class="absolute inset-0 z-50 bg-gray-100 flex flex-col items-center justify-center p-4 transition-opacity duration-300">
+            <div class="bg-white p-10 rounded-xl shadow-xl max-w-lg w-full text-center border border-gray-100">
+                <div class="mb-6 text-green-600 text-6xl">
+                    <i class="fas fa-file-excel"></i>
+                </div>
+                <h2 class="text-2xl font-bold mb-2">Cargar Datos de Evaluación</h2>
+                <p class="text-gray-500 mb-6 text-sm">Sube el archivo Excel (.xlsx) o CSV para visualizar los KPIs.</p>
+                
+                <label class="block w-full cursor-pointer group">
+                    <span class="sr-only">Elegir archivo</span>
+                    <input type="file" id="inputFile" accept=".csv, .xlsx, .xls" class="block w-full text-sm text-slate-500
+                      file:mr-4 file:py-2 file:px-4
+                      file:rounded-full file:border-0
+                      file:text-sm file:font-semibold
+                      file:bg-green-50 file:text-green-700
+                      hover:file:bg-green-100 transition-colors
+                    "/>
+                </label>
+                <div id="error-msg" class="text-red-500 text-xs mt-4 hidden"></div>
+            </div>
+        </div>
+
+        <!-- Dashboard Content (Hidden initially) -->
+        <div id="dashboard-container" class="flex w-full h-full opacity-0 transition-opacity duration-500 pointer-events-none">
+            
+            <!-- Sidebar / List -->
+            <aside class="w-full md:w-80 lg:w-96 bg-white border-r border-gray-200 flex flex-col z-20 absolute md:relative h-full transform -translate-x-full md:translate-x-0 transition-transform duration-300" id="sidebar">
+                
+                <!-- Sección de Filtros -->
+                <div class="p-4 border-b border-gray-200 bg-white space-y-3 shadow-sm z-10">
+                    <!-- Buscador -->
+                    <div class="relative">
+                        <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm"></i>
+                        <input type="text" id="searchInput" placeholder="Buscar colaborador o RUT..." class="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow bg-gray-50 hover:bg-white focus:bg-white">
+                    </div>
+                    
+                    <!-- Filtros Dropdown -->
+                    <div class="grid grid-cols-2 gap-2">
+                        <div class="relative">
+                            <select id="filterArea" class="w-full appearance-none bg-gray-50 border border-gray-300 text-gray-700 text-xs py-2 px-3 pr-6 rounded-lg leading-tight focus:outline-none focus:bg-white focus:border-blue-500 cursor-pointer">
+                                <option value="all">Todas las Áreas</option>
+                            </select>
+                            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
+                                <i class="fas fa-chevron-down text-[10px]"></i>
+                            </div>
+                        </div>
+
+                        <div class="relative">
+                            <select id="filterRehire" class="w-full appearance-none bg-gray-50 border border-gray-300 text-gray-700 text-xs py-2 px-3 pr-6 rounded-lg leading-tight focus:outline-none focus:bg-white focus:border-blue-500 cursor-pointer">
+                                <option value="all">Recontratar: Todos</option>
+                            </select>
+                            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
+                                <i class="fas fa-chevron-down text-[10px]"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Contador -->
+                    <div class="text-xs text-gray-400 font-medium text-right pt-1" id="list-count">0 Colaboradores</div>
+                </div>
+
+                <div class="flex-1 overflow-y-auto" id="employeeList">
+                    <!-- List Items Injected Here -->
+                </div>
+            </aside>
+
+            <!-- Detail View -->
+            <section class="flex-1 bg-gray-50 overflow-y-auto p-4 md:p-8 relative w-full">
+                <!-- Mobile Toggle -->
+                <button id="menu-toggle" class="md:hidden absolute top-4 left-4 z-30 bg-white p-2 rounded shadow text-gray-600">
+                    <i class="fas fa-bars"></i>
+                </button>
+
+                <!-- General Stats (5 Columns Updated) -->
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-8">
+                    
+                    <!-- Card 0: Total Evaluados (NUEVO DESTACADO) -->
+                    <div class="bg-blue-600 p-4 rounded-xl shadow-lg relative overflow-hidden text-white">
+                        <div class="absolute right-0 top-0 p-3 opacity-20 text-white text-6xl"><i class="fas fa-users"></i></div>
+                        <p class="text-xs font-bold text-blue-100 uppercase tracking-wider">Total Evaluados</p>
+                        <h3 class="text-4xl font-bold mt-2" id="stat-total-main">0</h3>
+                        <p class="text-xs text-blue-100 mt-1">Colaboradores en lista</p>
+                    </div>
+
+                    <!-- Card 1: Bien Evaluados -->
+                    <div class="bg-white p-4 rounded-xl border border-green-100 card-shadow relative overflow-hidden">
+                        <div class="absolute right-0 top-0 p-3 opacity-10 text-green-600 text-6xl"><i class="fas fa-thumbs-up"></i></div>
+                        <p class="text-xs font-bold text-gray-500 uppercase tracking-wider">Bien Evaluados (>75%)</p>
+                        <div class="flex items-baseline mt-2 gap-2">
+                            <h3 class="text-3xl font-bold text-gray-800" id="stat-high-pct">0%</h3>
+                            <span class="text-sm font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full" id="stat-high-count">0 colab.</span>
+                        </div>
+                    </div>
+
+                    <!-- Card 2: Mal Evaluados -->
+                    <div class="bg-white p-4 rounded-xl border border-red-100 card-shadow relative overflow-hidden">
+                        <div class="absolute right-0 top-0 p-3 opacity-10 text-red-600 text-6xl"><i class="fas fa-exclamation-circle"></i></div>
+                        <p class="text-xs font-bold text-gray-500 uppercase tracking-wider">Bajo Desempeño (≤75%)</p>
+                        <div class="flex items-baseline mt-2 gap-2">
+                            <h3 class="text-3xl font-bold text-gray-800" id="stat-low-pct">0%</h3>
+                            <span class="text-sm font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full" id="stat-low-count">0 colab.</span>
+                        </div>
+                    </div>
+
+                    <!-- Card 3: No Recontratar -->
+                    <div class="bg-white p-4 rounded-xl border border-gray-100 card-shadow relative overflow-hidden">
+                        <div class="absolute right-0 top-0 p-3 opacity-10 text-gray-600 text-6xl"><i class="fas fa-user-times"></i></div>
+                        <p class="text-xs font-bold text-gray-500 uppercase tracking-wider">No Recontratar</p>
+                        <div class="flex items-baseline mt-2 gap-2">
+                            <h3 class="text-3xl font-bold text-gray-800" id="stat-no-rehire-pct">0%</h3>
+                            <span class="text-sm font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full" id="stat-no-rehire-count">0 colab.</span>
+                        </div>
+                    </div>
+
+                    <!-- Card 4: Promedio General -->
+                    <div class="bg-white p-4 rounded-xl border border-blue-100 card-shadow relative overflow-hidden">
+                        <div class="absolute right-0 top-0 p-3 opacity-10 text-blue-600 text-6xl"><i class="fas fa-chart-pie"></i></div>
+                        <p class="text-xs font-bold text-gray-500 uppercase tracking-wider">Promedio General</p>
+                        <div class="flex items-baseline mt-2 gap-2">
+                            <h3 class="text-3xl font-bold text-gray-800" id="stat-global-score">0%</h3>
+                            <span class="text-xs text-gray-400 block ml-1">Puntaje Global</span>
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                    <!-- Global Chart Section -->
+                    <div class="bg-white p-6 rounded-xl border border-gray-100 card-shadow">
+                        <h3 class="font-bold text-gray-700 mb-4 flex items-center gap-2">
+                            <i class="fas fa-chart-bar text-blue-500"></i> Promedio General por Concepto Clave (%)
+                        </h3>
+                        <div class="h-64 w-full">
+                            <canvas id="globalChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Area Chart Section (NEW) -->
+                    <div class="bg-white p-6 rounded-xl border border-gray-100 card-shadow">
+                        <h3 class="font-bold text-gray-700 mb-4 flex items-center gap-2">
+                            <i class="fas fa-building text-blue-500"></i> Ranking de Desempeño por Área (%)
+                        </h3>
+                        <div class="h-64 w-full">
+                            <canvas id="areaChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Individual Detail Card -->
+                <div id="detail-card" class="bg-white rounded-xl card-shadow border border-gray-100 hidden">
+                    <!-- Header -->
+                    <div class="p-6 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div>
+                            <div class="flex items-center gap-3">
+                                <h2 class="text-2xl font-bold text-gray-800" id="detail-name">Selecciona un colaborador</h2>
+                                <span id="detail-score-badge" class="px-3 py-1 text-xs font-bold uppercase rounded-full bg-gray-200 text-gray-600">--</span>
+                            </div>
+                            <div class="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                                <span class="flex items-center gap-1"><i class="far fa-id-card"></i> <span id="detail-rut">--</span></span>
+                                <span class="flex items-center gap-1"><i class="fas fa-briefcase"></i> <span id="detail-area">--</span></span>
+                            </div>
+                        </div>
+                        <div class="text-right hidden md:block">
+                            <div class="text-xs text-gray-400 uppercase tracking-wider mb-1">Promedio Individual</div>
+                            <div class="text-3xl font-bold text-blue-600" id="detail-avg">0%</div>
+                        </div>
+                    </div>
+
+                    <div class="p-6 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <!-- Chart Section -->
+                        <div class="flex flex-col items-center justify-center h-80 relative">
+                            <canvas id="kpiRadarChart"></canvas>
+                        </div>
+
+                        <!-- Info Section -->
+                        <div class="space-y-6">
+                            
+                            <!-- Key Metrics List -->
+                            <div class="grid grid-cols-1 gap-3">
+                                <div class="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
+                                    <span class="text-sm font-medium text-gray-600">Compromiso</span>
+                                    <span id="val-compromiso" class="font-bold text-gray-800">-</span>
+                                </div>
+                                <div class="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
+                                    <span class="text-sm font-medium text-gray-600">Horas Extras / Disp.</span>
+                                    <span id="val-extras" class="font-bold text-gray-800">-</span>
+                                </div>
+                                <div class="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
+                                    <span class="text-sm font-medium text-gray-600">Desempeño Percibido</span>
+                                    <span id="val-desempeno" class="font-bold text-gray-800">-</span>
+                                </div>
+                                <div class="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
+                                    <span class="text-sm font-medium text-gray-600">Manejo Frustración</span>
+                                    <span id="val-frustracion" class="font-bold text-gray-800">-</span>
+                                </div>
+                            </div>
+
+                            <!-- Qualitative Data -->
+                            <div class="border-t border-gray-100 pt-4 space-y-4">
+                                <div>
+                                    <p class="text-xs font-bold text-gray-400 uppercase mb-1">¿Volvería a contratar?</p>
+                                    <p id="val-rehire" class="text-sm font-medium text-gray-800 bg-green-50 text-green-700 inline-block px-2 py-1 rounded">Sí</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs font-bold text-gray-400 uppercase mb-1">Proyección Largo Plazo</p>
+                                    <p id="val-longterm" class="text-sm text-gray-700">-</p>
+                                </div>
+                                <div class="bg-yellow-50 p-4 rounded-lg border-l-4 border-yellow-400">
+                                    <p class="text-xs font-bold text-yellow-700 uppercase mb-1">Comentarios Evaluador</p>
+                                    <p id="val-comments" class="text-sm text-gray-700 italic">"..."</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Empty State -->
+                <div id="empty-state" class="flex flex-col items-center justify-center h-full text-gray-400 p-8 hidden">
+                    <i class="fas fa-mouse-pointer text-4xl mb-4 opacity-50"></i>
+                    <p class="text-lg">Selecciona un colaborador de la lista para ver su detalle.</p>
+                </div>
+
+            </section>
+        </div>
+    </main>
+
+    <script>
+        // --- CONSTANTS & CONFIG ---
+        const SCORING = { 'BAJO': 0, 'MEDIO': 1, 'ALTO': 2 };
+        
+        // Exact headers from provided snippet
+        const HEADERS = {
+            NAME: "NOMBRE COMPLETO COLABORADOR",
+            RUT: "RUT",
+            AREA: "ÁREA",
+            KPI_COMPROMISO: "¿ ES UN COLABORADOR COMPROMETIDO CON AURORA AUSTRALIS?",
+            KPI_EXTRAS: "¿CUMPLE CON HACER HORAS EXTRAS, TRABAJAR FERIADOS O DOMINGOS?",
+            KPI_DESEMPENO: "SEGUN SU VISIÓN ¿CUÁL SERÍA SU NIVEL DESEMPEÑO?",
+            KPI_HABILIDADES: "EN TU PERCEPCIÓN, ¿ESTE COLABORADOR TIENE LAS HABILIDADES PARA ENFRENTAR  DESAFIOS O CAMBIOS?",
+            REHIRE: "¿VOLVERÍA A CONTRATARLO?",
+            LONGTERM: "DESDE MI EXPERIENCIA COMO JEFATURA, ESTE COLABORADOR ¿DESEA MANTENERSE EN AURORA A LARGO PLAZO?",
+            COMMENTS: "¿QUE PODRIAS DECIRNOS DE ESTE COLABORADOR?"
+        };
+
+        // State
+        let appData = [];
+        let chartInstance = null;
+        let globalChartInstance = null;
+        let areaChartInstance = null; // New Instance
+        let selectedId = null;
+
+        // --- DOM ELEMENTS ---
+        const fileInput = document.getElementById('inputFile');
+        const uploadOverlay = document.getElementById('upload-overlay');
+        const dashboardContainer = document.getElementById('dashboard-container');
+        const employeeListEl = document.getElementById('employeeList');
+        const searchInput = document.getElementById('searchInput');
+        const filterArea = document.getElementById('filterArea');
+        const filterRehire = document.getElementById('filterRehire'); 
+        const detailCard = document.getElementById('detail-card');
+        const emptyState = document.getElementById('empty-state');
+        const menuToggle = document.getElementById('menu-toggle');
+        const sidebar = document.getElementById('sidebar');
+
+        // --- EVENT LISTENERS ---
+        fileInput.addEventListener('change', handleFileUpload);
+        searchInput.addEventListener('keyup', handleSearch);
+        filterArea.addEventListener('change', handleSearch);
+        filterRehire.addEventListener('change', handleSearch);
+        menuToggle.addEventListener('click', () => {
+            sidebar.classList.toggle('-translate-x-full');
+        });
+
+        // --- CORE LOGIC ---
+
+        function handleFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const fileName = file.name.toLowerCase();
+
+            if (fileName.endsWith('.csv')) {
+                // Parse CSV using PapaParse
+                Papa.parse(file, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: (results) => {
+                        if (results.data && results.data.length > 0) {
+                            processData(results.data);
+                            showDashboard();
+                        } else {
+                            showError("El archivo CSV parece estar vacío.");
+                        }
+                    },
+                    error: (err) => showError("Error al leer CSV: " + err.message)
+                });
+            } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+                // Parse Excel using SheetJS
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        
+                        // Read first sheet
+                        const firstSheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[firstSheetName];
+                        
+                        // Convert to JSON
+                        const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                        
+                        if (jsonData && jsonData.length > 0) {
+                            processData(jsonData);
+                            showDashboard();
+                        } else {
+                            showError("El archivo Excel parece estar vacío.");
+                        }
+                    } catch (err) {
+                        showError("Error al procesar Excel: " + err.message);
+                    }
+                };
+                reader.onerror = () => showError("Error al leer el archivo.");
+                reader.readAsArrayBuffer(file);
+            } else {
+                showError("Formato de archivo no soportado. Usa .csv o .xlsx");
+            }
+        }
+
+        function showError(msg) {
+            const el = document.getElementById('error-msg');
+            el.innerText = msg;
+            el.classList.remove('hidden');
+        }
+
+        function normalizeKey(obj, keyStart) {
+            if(!obj) return "";
+            const keys = Object.keys(obj);
+            if (obj[keyStart]) return obj[keyStart];
+            const exact = keys.find(k => k.trim().replace(/^"|"$/g, '') === keyStart.trim().replace(/^"|"$/g, ''));
+            if (exact) return obj[exact];
+            const partial = keys.find(k => k.includes(keyStart.substring(0, 20))); 
+            return partial ? obj[partial] : "";
+        }
+
+        function getScore(val) {
+            if (!val) return 0;
+            const strVal = val.toString().toUpperCase().trim();
+            return SCORING[strVal] !== undefined ? SCORING[strVal] : 0;
+        }
+
+        function processData(data) {
+            let uniqueAreas = new Set();
+            let uniqueRehire = new Set();
+            
+            appData = data.map((row, index) => {
+                const name = normalizeKey(row, HEADERS.NAME);
+                if (!name) return null; 
+
+                // Raw scores (0, 1, 2)
+                const kpi1 = getScore(normalizeKey(row, HEADERS.KPI_COMPROMISO));
+                const kpi2 = getScore(normalizeKey(row, HEADERS.KPI_EXTRAS));
+                const kpi3 = getScore(normalizeKey(row, HEADERS.KPI_DESEMPENO));
+                const kpi4 = getScore(normalizeKey(row, HEADERS.KPI_HABILIDADES));
+
+                // Calculate percentage based average. Max points per item is 2. Total items 4. Total max = 8.
+                const totalPoints = kpi1 + kpi2 + kpi3 + kpi4;
+                const avgPct = (totalPoints / 8) * 100;
+                
+                const area = normalizeKey(row, HEADERS.AREA) || 'Sin Área';
+                uniqueAreas.add(area);
+
+                const rehireVal = normalizeKey(row, HEADERS.REHIRE) || 'S/I';
+                uniqueRehire.add(rehireVal);
+
+                return {
+                    id: index,
+                    name: name,
+                    rut: normalizeKey(row, HEADERS.RUT),
+                    area: area,
+                    // Convert individual scores to % (0=0%, 1=50%, 2=100%) for charts
+                    scores: [kpi1 * 50, kpi2 * 50, kpi3 * 50, kpi4 * 50], 
+                    rawScores: {
+                        compromiso: normalizeKey(row, HEADERS.KPI_COMPROMISO),
+                        extras: normalizeKey(row, HEADERS.KPI_EXTRAS),
+                        desempeno: normalizeKey(row, HEADERS.KPI_DESEMPENO),
+                        frustracion: normalizeKey(row, HEADERS.KPI_HABILIDADES)
+                    },
+                    avg: avgPct, // Now stores percentage 0-100
+                    rehire: rehireVal,
+                    longterm: normalizeKey(row, HEADERS.LONGTERM),
+                    comments: normalizeKey(row, HEADERS.COMMENTS)
+                };
+            }).filter(item => item !== null);
+
+            // Populate Area Filter
+            filterArea.innerHTML = '<option value="all">Todas las Áreas</option>';
+            Array.from(uniqueAreas).sort().forEach(area => {
+                const opt = document.createElement('option');
+                opt.value = area;
+                opt.innerText = area;
+                filterArea.appendChild(opt);
+            });
+
+            // Populate Rehire Filter (Dynamic)
+            filterRehire.innerHTML = '<option value="all">Recontratar: Todos</option>';
+            Array.from(uniqueRehire).sort().forEach(val => {
+                const opt = document.createElement('option');
+                opt.value = val;
+                opt.innerText = `Recontratar: ${val}`;
+                filterRehire.appendChild(opt);
+            });
+
+            updateGlobalStats();
+            renderList(appData);
+        }
+
+        function updateGlobalStats() {
+            if(appData.length === 0) return;
+            const total = appData.length;
+            
+            // 0. Total Global
+            document.getElementById('stat-total-main').innerText = total;
+
+            // 1. Promedio Global
+            const globalAvg = appData.reduce((acc, curr) => acc + curr.avg, 0) / total;
+            document.getElementById('stat-global-score').innerText = globalAvg.toFixed(1) + '%';
+            
+            // 2. Bien Evaluados (> 75%)
+            const highPerfCount = appData.filter(d => d.avg > 75).length;
+            const highPerfPct = Math.round((highPerfCount / total) * 100);
+            document.getElementById('stat-high-pct').innerText = highPerfPct + '%';
+            document.getElementById('stat-high-count').innerText = `${highPerfCount} colab.`;
+
+            // 3. Mal Evaluados (<= 75%)
+            const lowPerfCount = appData.filter(d => d.avg <= 75).length;
+            const lowPerfPct = Math.round((lowPerfCount / total) * 100);
+            document.getElementById('stat-low-pct').innerText = lowPerfPct + '%';
+            document.getElementById('stat-low-count').innerText = `${lowPerfCount} colab.`;
+
+            // 4. No Recontratar
+            const noRehireCount = appData.filter(d => {
+                const val = d.rehire ? d.rehire.toUpperCase().trim() : '';
+                return val === 'NO' || val.startsWith('NO ');
+            }).length;
+            const noRehirePct = Math.round((noRehireCount / total) * 100);
+            document.getElementById('stat-no-rehire-pct').innerText = noRehirePct + '%';
+            document.getElementById('stat-no-rehire-count').innerText = `${noRehireCount} colab.`;
+
+            // 5. Update Global Concept Chart
+            let sums = [0, 0, 0, 0];
+            appData.forEach(item => {
+                sums[0] += item.scores[0]; 
+                sums[1] += item.scores[1]; 
+                sums[2] += item.scores[2]; 
+                sums[3] += item.scores[3]; 
+            });
+            const avgs = sums.map(s => s / total);
+            renderGlobalChart(avgs);
+
+            // 6. Update Area Ranking Chart (New Logic)
+            const areaStats = {};
+            appData.forEach(item => {
+                if(!areaStats[item.area]) areaStats[item.area] = { sum: 0, count: 0 };
+                areaStats[item.area].sum += item.avg;
+                areaStats[item.area].count++;
+            });
+            
+            // Create Sorted Array
+            const areaRanking = Object.keys(areaStats).map(area => ({
+                area: area,
+                avg: areaStats[area].sum / areaStats[area].count
+            })).sort((a, b) => b.avg - a.avg); // Descending
+
+            renderAreaChart(areaRanking);
+        }
+
+        function renderGlobalChart(data) {
+            const ctx = document.getElementById('globalChart').getContext('2d');
+            if (globalChartInstance) globalChartInstance.destroy();
+
+            globalChartInstance = new Chart(ctx, {
+                type: 'bar',
+                plugins: [ChartDataLabels],
+                data: {
+                    labels: ['Compromiso', 'Horas Extras', 'Desempeño', 'Manejo Frustración'],
+                    datasets: [{
+                        label: 'Promedio Global (%)',
+                        data: data,
+                        backgroundColor: [
+                            'rgba(59, 130, 246, 0.7)',
+                            'rgba(16, 185, 129, 0.7)',
+                            'rgba(245, 158, 11, 0.7)',
+                            'rgba(139, 92, 246, 0.7)'
+                        ],
+                        borderColor: [
+                            'rgba(59, 130, 246, 1)',
+                            'rgba(16, 185, 129, 1)',
+                            'rgba(245, 158, 11, 1)',
+                            'rgba(139, 92, 246, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: { callback: (val) => val + '%', stepSize: 25 }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { callbacks: { label: (ctx) => `Promedio: ${ctx.raw.toFixed(1)}%` } },
+                        datalabels: {
+                            color: '#4b5563', anchor: 'end', align: 'top',
+                            formatter: (val) => val.toFixed(1) + '%',
+                            font: { weight: 'bold', size: 12 }, offset: -4
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderAreaChart(rankingData) {
+            const ctx = document.getElementById('areaChart').getContext('2d');
+            if (areaChartInstance) areaChartInstance.destroy();
+
+            areaChartInstance = new Chart(ctx, {
+                type: 'bar',
+                plugins: [ChartDataLabels],
+                data: {
+                    labels: rankingData.map(r => r.area),
+                    datasets: [{
+                        label: 'Promedio Área',
+                        data: rankingData.map(r => r.avg),
+                        backgroundColor: 'rgba(99, 102, 241, 0.6)', // Indigo
+                        borderColor: 'rgba(99, 102, 241, 1)',
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    indexAxis: 'y', // Horizontal Bar
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: { callback: (val) => val + '%' }
+                        },
+                        y: {
+                            grid: { display: false }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        datalabels: {
+                            color: '#ffffff', // White text inside bar usually readable if dark bar
+                            anchor: 'end', 
+                            align: 'start', // Text inside the end of the bar
+                            formatter: (val) => val.toFixed(1) + '%',
+                            font: { weight: 'bold', size: 11 }
+                        },
+                        tooltip: { callbacks: { label: (ctx) => `Promedio: ${ctx.raw.toFixed(1)}%` } }
+                    }
+                }
+            });
+        }
+
+        function showDashboard() {
+            uploadOverlay.classList.add('opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+                uploadOverlay.style.display = 'none';
+                dashboardContainer.classList.remove('opacity-0', 'pointer-events-none');
+                dashboardContainer.classList.add('pointer-events-auto');
+            }, 300);
+        }
+
+        function handleSearch() {
+            const term = searchInput.value.toLowerCase();
+            const area = filterArea.value;
+            const rehire = filterRehire.value;
+
+            const filtered = appData.filter(item => {
+                const matchesName = item.name.toLowerCase().includes(term) || (item.rut && item.rut.toLowerCase().includes(term));
+                const matchesArea = area === 'all' || item.area === area;
+                const matchesRehire = rehire === 'all' || item.rehire === rehire;
+                
+                return matchesName && matchesArea && matchesRehire;
+            });
+            renderList(filtered);
+        }
+
+        // --- UI RENDERING ---
+
+        function renderList(list) {
+            employeeListEl.innerHTML = '';
+            document.getElementById('list-count').innerText = `${list.length} Colaboradores`;
+
+            list.forEach(item => {
+                const el = document.createElement('div');
+                let scoreColor = 'text-red-500';
+                if(item.avg >= 75) scoreColor = 'text-green-600';
+                else if(item.avg >= 50) scoreColor = 'text-yellow-600';
+
+                el.className = `p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors flex justify-between items-center group ${selectedId === item.id ? 'selected-item' : ''}`;
+                el.onclick = () => selectEmployee(item, el);
+                
+                el.innerHTML = `
+                    <div>
+                        <h4 class="text-sm font-bold text-gray-800 group-hover:text-blue-600 transition-colors">${item.name}</h4>
+                        <p class="text-xs text-gray-500">${item.area}</p>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-sm font-bold ${scoreColor}">${item.avg.toFixed(0)}%</span>
+                    </div>
+                `;
+                employeeListEl.appendChild(el);
+            });
+        }
+
+        function selectEmployee(item, element) {
+            selectedId = item.id;
+            
+            Array.from(employeeListEl.children).forEach(child => child.classList.remove('selected-item'));
+            if(element) element.classList.add('selected-item');
+            
+            if(window.innerWidth < 768) sidebar.classList.add('-translate-x-full');
+
+            emptyState.classList.add('hidden');
+            detailCard.classList.remove('hidden');
+
+            document.getElementById('detail-name').innerText = item.name;
+            document.getElementById('detail-rut').innerText = item.rut || 'S/I';
+            document.getElementById('detail-area').innerText = item.area;
+            document.getElementById('detail-avg').innerText = item.avg.toFixed(0) + '%';
+            
+            document.getElementById('val-compromiso').innerText = item.rawScores.compromiso || '-';
+            document.getElementById('val-extras').innerText = item.rawScores.extras || '-';
+            document.getElementById('val-desempeno').innerText = item.rawScores.desempeno || '-';
+            document.getElementById('val-frustracion').innerText = item.rawScores.frustracion || '-';
+            
+            document.getElementById('val-rehire').innerText = item.rehire || '-';
+            document.getElementById('val-longterm').innerText = item.longterm || '-';
+            document.getElementById('val-comments').innerText = item.comments ? `"${item.comments}"` : 'Sin comentarios';
+
+            const badge = document.getElementById('detail-score-badge');
+            if(item.avg >= 75) {
+                badge.className = "px-3 py-1 text-xs font-bold uppercase rounded-full bg-green-100 text-green-700";
+                badge.innerText = "Excelente";
+            } else if (item.avg >= 50) {
+                badge.className = "px-3 py-1 text-xs font-bold uppercase rounded-full bg-yellow-100 text-yellow-700";
+                badge.innerText = "Regular";
+            } else {
+                badge.className = "px-3 py-1 text-xs font-bold uppercase rounded-full bg-red-100 text-red-700";
+                badge.innerText = "Bajo";
+            }
+
+            updateChart(item);
+        }
+
+        function updateChart(item) {
+            const ctx = document.getElementById('kpiRadarChart').getContext('2d');
+            
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
+
+            chartInstance = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: ['Compromiso', 'Horas Extras', 'Desempeño', 'Manejo Frustración'],
+                    datasets: [{
+                        label: 'Nivel Actual (%)',
+                        data: item.scores,
+                        backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                        borderColor: '#2563eb',
+                        pointBackgroundColor: '#2563eb',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: '#2563eb'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    elements: { line: { tension: 0.3 } },
+                    scales: {
+                        r: {
+                            angleLines: { display: true, color: '#e5e7eb' },
+                            grid: { color: '#e5e7eb' },
+                            suggestedMin: 0,
+                            suggestedMax: 100,
+                            ticks: {
+                                stepSize: 50,
+                                showLabelBackdrop: false,
+                                callback: function(value) {
+                                    return value + '%';
+                                },
+                                font: { size: 10 }
+                            },
+                            pointLabels: {
+                                font: { size: 12, weight: 'bold' },
+                                color: '#4b5563'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
